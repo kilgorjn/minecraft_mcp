@@ -14,19 +14,6 @@ const bot = mineflayer.createBot({
 // Load pathfinder plugin
 bot.loadPlugin(pathfinder);
 
-// Pathfinder helper functions
-function createGoalBlock(x, y, z) {
-  return new goals.GoalBlock(x, y, z);
-}
-
-function createGoalNear(x, y, z, range = 1) {
-  return new goals.GoalNear(x, y, z, range);
-}
-
-function createMovements() {
-  return new Movements(bot, bot.registry);
-}
-
 // Helper functions
 function createResponse(message) {
   return {
