@@ -2,6 +2,12 @@ const mineflayer = require('mineflayer');
 const { McpServer } = require('@modelcontextprotocol/sdk/server/mcp.js');
 const { StdioServerTransport } = require('@modelcontextprotocol/sdk/server/stdio.js');
 const { z } = require('zod');
+const { pathfinder, Movements, goals } = require('mineflayer-pathfinder');
+
+// Movement detection constants
+const MOVEMENT_THRESHOLD = 0.1; // Minimum blocks moved to consider bot as moving
+const STUCK_DETECTION_TIME = 2000; // Time in ms without movement to consider bot stuck
+const POSITION_CHECK_INTERVAL = 100; // How often to check position in ms
 
 // Create the bot
 const bot = mineflayer.createBot({
@@ -9,6 +15,9 @@ const bot = mineflayer.createBot({
   port: 25565,
   username: 'MCPBot'
 });
+
+// Load pathfinder plugin
+bot.loadPlugin(pathfinder);
 
 // Helper functions
 function createResponse(message) {
@@ -57,25 +66,72 @@ async function setupMcpServer() {
         
         const startPos = bot.entity.position;
         
-        // Special handling for movement commands - auto-add 2 second duration
+        // Special handling for movement commands - distance-based movement
         if (command === 'setControlState' && parameters.length >= 2) {
-          // Execute command
-          const result = bot[command](...parameters);
+          // Default to 3 blocks if no distance specified, otherwise use third parameter
+          const targetDistance = parameters.length >= 3 ? parseFloat(parameters[2]) : 3.0;
+          // Default to 10 seconds if no timeout specified, otherwise use fourth parameter
+          const maxTimeMs = parameters.length >= 4 ? parseFloat(parameters[3]) * 1000 : 10000;
           
-          // Wait 2 seconds for movement
-          await new Promise(resolve => setTimeout(resolve, 2000));
+          // Execute command
+          const result = bot[command](parameters[0], parameters[1]);
+          
+          // Move until target distance is reached, timeout, or bot gets stuck
+          const startTime = Date.now();
+          let currentDistance = 0;
+          let lastPos = bot.entity.position;
+          let stuckTime = 0;
+          
+          while (currentDistance < targetDistance && (Date.now() - startTime) < maxTimeMs) {
+            await new Promise(resolve => setTimeout(resolve, POSITION_CHECK_INTERVAL));
+            const currentPos = bot.entity.position;
+            currentDistance = Math.sqrt(
+              Math.pow(currentPos.x - startPos.x, 2) + 
+              Math.pow(currentPos.z - startPos.z, 2) + 
+              Math.pow(currentPos.y - startPos.y, 2)
+            );
+            
+            // Check if bot is stuck (not moving)
+            const positionChange = Math.sqrt(
+              Math.pow(currentPos.x - lastPos.x, 2) + 
+              Math.pow(currentPos.z - lastPos.z, 2) + 
+              Math.pow(currentPos.y - lastPos.y, 2)
+            );
+            
+            if (positionChange < MOVEMENT_THRESHOLD) {
+              stuckTime += POSITION_CHECK_INTERVAL;
+              if (stuckTime >= STUCK_DETECTION_TIME) {
+                break; // Exit if stuck for too long
+              }
+            } else {
+              stuckTime = 0; // Reset stuck timer if moving
+              lastPos = currentPos;
+            }
+          }
           
           // Clear controls
           bot.clearControlStates();
           
           const endPos = bot.entity.position;
-          const distance = Math.sqrt(
+          const actualDistance = Math.sqrt(
             Math.pow(endPos.x - startPos.x, 2) + 
             Math.pow(endPos.z - startPos.z, 2) + 
             Math.pow(endPos.y - startPos.y, 2)
           );
           
-          return createResponse(`Executed: bot.${command}(${parameters.join(', ')}) for 2000ms. Moved ${distance.toFixed(2)} blocks. Position: (${Math.floor(endPos.x)}, ${Math.floor(endPos.y)}, ${Math.floor(endPos.z)})`);
+          // Determine why movement stopped
+          let stopReason = "";
+          if (actualDistance >= targetDistance - 0.2) {
+            stopReason = "reached target";
+          } else if (stuckTime >= STUCK_DETECTION_TIME) {
+            stopReason = "stuck/blocked";
+          } else if ((Date.now() - startTime) >= maxTimeMs) {
+            stopReason = "timeout";
+          } else {
+            stopReason = "unknown";
+          }
+          
+          return createResponse(`Executed: bot.${command}(${parameters[0]}, ${parameters[1]}) for ${actualDistance.toFixed(2)} blocks (target: ${targetDistance}, ${stopReason}). Position: (${Math.floor(endPos.x)}, ${Math.floor(endPos.y)}, ${Math.floor(endPos.z)})`);
         } else {
           // Execute command directly
           let result = bot[command](...parameters);
@@ -90,6 +146,37 @@ async function setupMcpServer() {
       } catch (error) {
         // Clean up on error
         bot.clearControlStates();
+        return createErrorResponse(error);
+      }
+    }
+  );
+
+  // Pathfinder navigation tool
+  server.tool(
+    "pathfind-to-position",
+    "Use pathfinder to navigate to specific coordinates",
+    {
+      x: z.number().describe("Target X coordinate"),
+      y: z.number().describe("Target Y coordinate"),
+      z: z.number().describe("Target Z coordinate"),
+      range: z.number().optional().describe("How close to get (default: 0 for exact position)")
+    },
+    async ({ x, y, z, range = 0 }) => {
+      try {
+        // Set up movements
+        const movements = new Movements(bot, bot.registry);
+        bot.pathfinder.setMovements(movements);
+        
+        // Create goal
+        const goal = range > 0 ? 
+          new goals.GoalNear(x, y, z, range) : 
+          new goals.GoalBlock(x, y, z);
+        
+        // Start pathfinding
+        bot.pathfinder.setGoal(goal);
+        
+        return createResponse(`Started pathfinding to (${x}, ${y}, ${z})${range > 0 ? ` within ${range} blocks` : ' exactly'}`);
+      } catch (error) {
         return createErrorResponse(error);
       }
     }
