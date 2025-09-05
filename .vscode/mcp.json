@@ -1,0 +1,13 @@
+{
+	"servers": {
+		"minecraft-mcp-server": {
+			"type": "stdio",
+			"command": "node",
+			"args": [
+				"index.js"
+			],
+			"cwd": "c:\\Users\\kilgo\\workspace_mcp\\minecraft_mcp"
+		}
+	},
+	"inputs": []
+}
