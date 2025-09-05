@@ -4,6 +4,11 @@ const { StdioServerTransport } = require('@modelcontextprotocol/sdk/server/stdio
 const { z } = require('zod');
 const { pathfinder, Movements, goals } = require('mineflayer-pathfinder');
 
+// Movement detection constants
+const MOVEMENT_THRESHOLD = 0.1; // Minimum blocks moved to consider bot as moving
+const STUCK_DETECTION_TIME = 2000; // Time in ms without movement to consider bot stuck
+const POSITION_CHECK_INTERVAL = 100; // How often to check position in ms
+
 // Create the bot
 const bot = mineflayer.createBot({
   host: '192.168.86.23',
@@ -76,10 +81,9 @@ async function setupMcpServer() {
           let currentDistance = 0;
           let lastPos = bot.entity.position;
           let stuckTime = 0;
-          const stuckThreshold = 2000; // 2 seconds without movement = stuck
           
           while (currentDistance < targetDistance && (Date.now() - startTime) < maxTimeMs) {
-            await new Promise(resolve => setTimeout(resolve, 100)); // Check every 100ms
+            await new Promise(resolve => setTimeout(resolve, POSITION_CHECK_INTERVAL));
             const currentPos = bot.entity.position;
             currentDistance = Math.sqrt(
               Math.pow(currentPos.x - startPos.x, 2) + 
@@ -94,9 +98,9 @@ async function setupMcpServer() {
               Math.pow(currentPos.y - lastPos.y, 2)
             );
             
-            if (positionChange < 0.1) { // Less than 0.1 block movement
-              stuckTime += 100;
-              if (stuckTime >= stuckThreshold) {
+            if (positionChange < MOVEMENT_THRESHOLD) {
+              stuckTime += POSITION_CHECK_INTERVAL;
+              if (stuckTime >= STUCK_DETECTION_TIME) {
                 break; // Exit if stuck for too long
               }
             } else {
@@ -119,7 +123,7 @@ async function setupMcpServer() {
           let stopReason = "";
           if (actualDistance >= targetDistance - 0.2) {
             stopReason = "reached target";
-          } else if (stuckTime >= stuckThreshold) {
+          } else if (stuckTime >= STUCK_DETECTION_TIME) {
             stopReason = "stuck/blocked";
           } else if ((Date.now() - startTime) >= maxTimeMs) {
             stopReason = "timeout";
