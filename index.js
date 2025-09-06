@@ -3,7 +3,8 @@ const { McpServer } = require('@modelcontextprotocol/sdk/server/mcp.js');
 const { StdioServerTransport } = require('@modelcontextprotocol/sdk/server/stdio.js');
 const { z } = require('zod');
 const { pathfinder, Movements, goals } = require('mineflayer-pathfinder');
-const { setupToolingForMcp } = require('./tools');
+const { setupToolingForMcp } = require('./modules/tools');
+const { setupSamplesForMcp } = require('./modules/samples');
 // const EventMonitor = require('./eventMonitor');
 
 
@@ -37,8 +38,8 @@ async function setupMcpServer() {
     }
   );
 
-  setupToolingForMcp(server, bot, goals);
-
+  setupToolingForMcp(server, bot);
+  setupSamplesForMcp(server, bot);
 
   bot.on('whisper', (username, message) => {
     if (username === bot.username) return; // Ignore messages from the bot itself
@@ -46,41 +47,31 @@ async function setupMcpServer() {
     if (message === 'ping') {
       bot.chat('pong');
     }
-    console.log(`server = ${server}`);
-    const response = server.createMessage({    
-      messages: [
-        { 
-          role: 'user', 
-          content: { 
-            type: 'text', 
-            text: `Whisper from ${username}: ${message}. How should the bot respond?` 
-          } 
-        }
-      ], maxTokens: 100,
-    });
-    bot.chat(response.content.text);
 
-  });  
+  }); 
+  return server;
+} 
 
 
 
 // Start when bot spawns
-  bot.once('spawn', async () => {
-    console.error('Bot has spawned in the world');
+bot.once('spawn', async () => {
+  console.error('Bot has spawned in the world');
+  
+  try {
+    const server = await setupMcpServer();
+    console.log("MCP Server setup complete");
     
-    try {
-      const server = await setupMcpServer();
-      
-      // Connect to stdio transport
-      const transport = new StdioServerTransport();
-      await server.connect(transport);
-      console.error("MCP Server running on stdio");
-      
-    } catch (error) {
-      console.error(`Failed to start MCP server: ${error.message}`);
-    }
-  });
+    // Connect to stdio transport
+    const transport = new StdioServerTransport();
+    await server.connect(transport);
+    console.error("MCP Server running on stdio");
+    
+  } catch (error) {
+    console.error(`Failed to start MCP server: ${error.message}`);
+  }
+});
 
-  bot.on('error', err => console.error('Bot error:', err));
-}
+bot.on('error', err => console.error('Bot error:', err));
+
 

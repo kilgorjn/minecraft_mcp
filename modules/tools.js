@@ -1,5 +1,6 @@
 
 const { z } = require('zod');
+const { Movements, goals } = require('mineflayer-pathfinder');
 
 
 // Movement detection constants
@@ -138,7 +139,7 @@ function createErrorResponse(error) {
 
 
 
-setupToolingForMcp = (server,bot,goals) => {
+setupToolingForMcp = (server,bot) => {
 
 
   // Bot property inspector tool
@@ -283,3 +284,6 @@ setupToolingForMcp = (server,bot,goals) => {
         }
       );
 }
+
+
+module.exports = { setupToolingForMcp };
